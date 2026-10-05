@@ -33,6 +33,8 @@ import { toast } from "sonner";
 
 type Props = {
   records: TransactionRecord[];
+  /** Changes when the filters change; paging restarts from the first page then, and only then. */
+  resetKey?: string;
   pageSize?: number;
   /** Fewer columns and no paging, for the overview. */
   compact?: boolean;
@@ -163,9 +165,12 @@ function AttachmentIcon({ record }: { record: TransactionRecord }) {
         <TooltipTrigger asChild>
           <span
             className="grid size-8 place-items-center text-ink-3/60"
-            aria-label={t.transactions.attachmentUnavailable}
+            tabIndex={0}
           >
             <Paperclip className="size-4" />
+            <span className="sr-only">
+              {t.transactions.attachmentUnavailable}
+            </span>
           </span>
         </TooltipTrigger>
         <TooltipContent>{t.transactions.attachmentUnavailable}</TooltipContent>
@@ -193,6 +198,7 @@ function AttachmentIcon({ record }: { record: TransactionRecord }) {
 
 export function TransactionList({
   records,
+  resetKey = "",
   pageSize = 40,
   compact = false,
   emptyTitle,
@@ -204,7 +210,7 @@ export function TransactionList({
   const archive = useArchive();
   const [visibleCount, setVisibleCount] = useState(pageSize);
 
-  useEffect(() => setVisibleCount(pageSize), [records, pageSize]);
+  useEffect(() => setVisibleCount(pageSize), [resetKey, pageSize]);
 
   const visible = compact ? records : records.slice(0, visibleCount);
   const groups = useMemo(() => {
@@ -373,30 +379,32 @@ export function TransactionList({
                   <div
                     className="flex items-center gap-3 px-4 py-3 active:bg-surface-2/60"
                     onClick={() => openEditTransaction(record)}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={event =>
-                      event.key === "Enter" && openEditTransaction(record)
-                    }
                   >
                     <TypeChip type={record.type} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <p
-                          className="tnum truncate font-semibold text-ink"
+                        <button
+                          type="button"
+                          className="tnum truncate font-semibold text-ink outline-none focus-visible:underline"
                           dir="ltr"
+                          onClick={event => {
+                            event.stopPropagation();
+                            openEditTransaction(record);
+                          }}
                         >
                           {record.recordNumber}
-                        </p>
+                        </button>
                         <Amount record={record} />
                       </div>
                       <div className="mt-0.5 flex items-center justify-between gap-2 text-xs text-ink-3">
                         <p className="flex min-w-0 items-center gap-1">
                           {record.attachmentUrl && (
-                            <Paperclip
-                              className="size-3 shrink-0"
-                              aria-label={t.transactions.columns.attachment}
-                            />
+                            <>
+                              <Paperclip className="size-3 shrink-0" />
+                              <span className="sr-only">
+                                {t.transactions.columns.attachment}
+                              </span>
+                            </>
                           )}
                           <span className="truncate" dir="auto">
                             {record.categoryName || t.analytics.uncategorized}

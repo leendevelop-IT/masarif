@@ -150,7 +150,11 @@ export default function AnalyticsPage() {
               {t.analytics.cashFlowHint}
             </p>
           </div>
-          <div className="segmented" role="group">
+          <div
+            className="segmented"
+            role="group"
+            aria-label={t.analytics.viewToggle}
+          >
             <button
               type="button"
               aria-pressed={view === "chart"}

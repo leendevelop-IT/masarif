@@ -4,7 +4,7 @@ A bilingual (Arabic / English) income-and-expense ledger for small businesses in
 
 - **Frontend:** React 19, Vite 7, Tailwind CSS 4, wouter, TanStack Query, tRPC client
 - **Backend:** Node 20+, Express 4, tRPC 11, Drizzle ORM
-- **Database:** PostgreSQL (attachments are stored in the database, so no file storage service is needed)
+- **Database:** PostgreSQL (attachments are stored in the database, so no file storage service is needed; 10 MB per file, 100 MB per account)
 - **Auth:** email + password (scrypt), signed session cookie
 
 ## Run it locally

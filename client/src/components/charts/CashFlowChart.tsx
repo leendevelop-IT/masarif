@@ -86,7 +86,13 @@ export function CashFlowChart({
           {t.overview.expenses}
         </span>
       </div>
-      <div dir="ltr" style={{ height }} className="relative -ms-2">
+      <div
+        dir="ltr"
+        style={{ height }}
+        className="relative -ms-2"
+        role="img"
+        aria-label={`${t.overview.cashFlow}. ${t.analytics.chartAlt}`}
+      >
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={data}

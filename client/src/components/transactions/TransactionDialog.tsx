@@ -142,17 +142,16 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
     [categories, type]
   );
 
-  // Keep the category valid for the chosen type without overriding a deliberate choice.
-  useEffect(() => {
-    if (!open) return;
-    if (
-      !matchingCategories.some(category => String(category.id) === categoryId)
-    ) {
-      setCategoryId(
-        matchingCategories[0] ? String(matchingCategories[0].id) : ""
-      );
-    }
-  }, [open, matchingCategories, categoryId]);
+  // The category that is actually in effect: the chosen one while it fits the
+  // type, otherwise the first category of that type. Derived at render time so
+  // that switching type never clobbers the record's own category on open.
+  const effectiveCategoryId = matchingCategories.some(
+    category => String(category.id) === categoryId
+  )
+    ? categoryId
+    : matchingCategories[0]
+      ? String(matchingCategories[0].id)
+      : "";
 
   const isExpense = type === "expense";
   const amounts = computeAmounts({
@@ -193,6 +192,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
   const existingAttachment = record && !removeExisting && !file ? record : null;
 
   const upload = trpc.finance.uploadAttachment.useMutation();
+  const discardUpload = trpc.finance.discardAttachment.useMutation();
   const create = trpc.finance.createTransaction.useMutation();
   const update = trpc.finance.updateTransaction.useMutation();
   const createCategory = trpc.finance.createCategory.useMutation();
@@ -226,7 +226,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
     const next: FieldErrors = {};
     if (!(Number(amount) > 0)) next.amount = t.form.errors.amount;
     if (!date) next.date = t.form.errors.date;
-    if (!categoryId) next.category = t.form.errors.category;
+    if (!effectiveCategoryId) next.category = t.form.errors.category;
     if (numberingMode === "manual" && !recordNumber.trim())
       next.recordNumber = t.form.errors.recordNumber;
     setErrors(next);
@@ -235,7 +235,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
 
   const buildPayload = (attachment: AttachmentLink | null | undefined) => ({
     type,
-    categoryId: Number(categoryId),
+    categoryId: Number(effectiveCategoryId),
     amount: Number(amount),
     amountIncludesTax: isExpense,
     taxEnabled: isExpense && taxApplies,
@@ -250,6 +250,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
   });
 
   const save = async () => {
+    let uploadedId: number | null = null;
     try {
       let attachment: AttachmentLink | null | undefined;
       if (file) {
@@ -259,6 +260,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
           mimeType: file.type || "application/octet-stream",
           fileData: await fileToBase64(file),
         });
+        uploadedId = uploaded.id;
         attachment = {
           name: uploaded.name,
           mimeType: uploaded.mimeType,
@@ -274,6 +276,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
           ...buildPayload(attachment),
         });
       else await create.mutateAsync(buildPayload(attachment));
+      uploadedId = null;
       await utils.finance.dashboard.invalidate();
       toast.success(
         record
@@ -284,6 +287,8 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
       );
       onOpenChange(false);
     } catch (error) {
+      // The file went up but the transaction did not: free it rather than leave it orphaned.
+      if (uploadedId) discardUpload.mutate({ id: uploadedId });
       toast.error(describeError(error, t));
     } finally {
       setBusy("idle");
@@ -342,6 +347,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
           </DialogHeader>
 
           <form
+            id="tx-form"
             className="scroll-thin flex-1 overflow-y-auto px-5 pt-4 pb-5 sm:px-7"
             onSubmit={event => {
               event.preventDefault();
@@ -352,7 +358,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
             <div
               className="segmented grid w-full grid-cols-2"
               role="group"
-              aria-label={t.form.numbering}
+              aria-label={t.form.type}
             >
               <button
                 type="button"
@@ -467,7 +473,7 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
                   </div>
                 ) : (
                   <Select
-                    value={categoryId}
+                    value={effectiveCategoryId}
                     onValueChange={value =>
                       value === NEW_CATEGORY
                         ? setNewCategoryOpen(true)
@@ -744,7 +750,9 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
                     </p>
                     <p className="text-xs text-ink-3">
                       {file
-                        ? `${(file.size / 1024).toFixed(0)} KB`
+                        ? t.form.fileSize(
+                            f.integer(Math.max(1, Math.round(file.size / 1024)))
+                          )
                         : t.form.currentAttachment}
                     </p>
                   </div>
@@ -814,8 +822,8 @@ export function TransactionDialog({ open, mode, onOpenChange }: Props) {
                 {t.common.cancel}
               </Button>
               <Button
-                type="button"
-                onClick={submit}
+                type="submit"
+                form="tx-form"
                 disabled={working}
                 className={cn(
                   "h-11 min-w-36 gap-2 px-5 text-primary-foreground",

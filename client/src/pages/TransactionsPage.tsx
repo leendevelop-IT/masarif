@@ -116,14 +116,13 @@ export default function TransactionsPage() {
 
       <div
         className="segmented mb-4 grid w-full max-w-md grid-cols-3"
-        role="tablist"
+        role="group"
+        aria-label={t.transactions.tabsLabel}
       >
         {TABS.map(key => (
           <button
             key={key}
             type="button"
-            role="tab"
-            aria-selected={tab === key}
             aria-pressed={tab === key}
             onClick={() =>
               navigate(key === "all" ? "/transactions" : `/transactions/${key}`)
@@ -187,6 +186,7 @@ export default function TransactionsPage() {
 
         <TransactionList
           records={filtered}
+          resetKey={`${tab}|${JSON.stringify(filters)}`}
           emptyTitle={
             activeFilters || typeFilter
               ? t.transactions.noMatchesTitle

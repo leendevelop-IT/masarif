@@ -21,6 +21,10 @@ export const ENV = {
       );
     return DEV_SESSION_SECRET;
   },
+  /** True while the built-in development secret is in use. */
+  get usesDevSessionSecret() {
+    return this.sessionSecret === DEV_SESSION_SECRET;
+  },
   /** Run pending database migrations on startup (default on; set RUN_MIGRATIONS=false to skip). */
   get runMigrations() {
     return process.env.RUN_MIGRATIONS !== "false";

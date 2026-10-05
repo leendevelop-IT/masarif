@@ -5,6 +5,8 @@ export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
 /** Attachments are served from this path followed by their id. */
 export const ATTACHMENT_URL_PREFIX = "/api/attachments/";
 export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+/** All of one account's attachments together may not exceed this. */
+export const MAX_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024;
 export const MIN_PASSWORD_LENGTH = 8;
 
 /**
@@ -28,6 +30,8 @@ export const ERR = {
   ATTACHMENT_TOO_LARGE: "ATTACHMENT_TOO_LARGE",
   ATTACHMENT_EMPTY: "ATTACHMENT_EMPTY",
   ATTACHMENT_NOT_FOUND: "ATTACHMENT_NOT_FOUND",
+  ATTACHMENT_QUOTA_EXCEEDED: "ATTACHMENT_QUOTA_EXCEEDED",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
 } as const;
 
 export type ErrorCode = (typeof ERR)[keyof typeof ERR];

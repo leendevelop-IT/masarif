@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  clearLoginFailures,
+  clearAttempts,
   createSessionToken,
   hashPassword,
-  loginThrottle,
-  recordLoginFailure,
+  hashPin,
+  releaseAttempt,
+  takeAttempt,
   verifyPassword,
+  verifyPin,
   verifySessionToken,
 } from "./_core/auth";
 
@@ -26,11 +28,25 @@ describe("passwords", () => {
   });
 });
 
+describe("pins", () => {
+  it("verifies the pin it hashed and rejects others", async () => {
+    const stored = await hashPin("1234");
+    expect(stored.length).toBeLessThanOrEqual(128);
+    expect(await verifyPin("1234", stored)).toBe(true);
+    expect(await verifyPin("1235", stored)).toBe(false);
+    expect(await verifyPin("1234", null)).toBe(false);
+    expect(await verifyPin("1234", "garbage")).toBe(false);
+  });
+});
+
 describe("sessions", () => {
-  it("round-trips the user id and rejects tampered or foreign tokens", async () => {
+  it("round-trips the session and rejects tampered or foreign tokens", async () => {
     vi.stubEnv("SESSION_SECRET", "unit-test-signing-key-never-deployed");
-    const token = await createSessionToken(42);
-    expect(await verifySessionToken(token)).toBe(42);
+    const token = await createSessionToken({ userId: 42, sessionVersion: 3 });
+    expect(await verifySessionToken(token)).toEqual({
+      userId: 42,
+      sessionVersion: 3,
+    });
     expect(await verifySessionToken(`${token}x`)).toBeNull();
     expect(await verifySessionToken(undefined)).toBeNull();
 
@@ -40,25 +56,44 @@ describe("sessions", () => {
 
   it("expires", async () => {
     vi.stubEnv("SESSION_SECRET", "unit-test-signing-key-never-deployed");
-    const token = await createSessionToken(7, -1000);
+    const token = await createSessionToken(
+      { userId: 7, sessionVersion: 1 },
+      -1000
+    );
     expect(await verifySessionToken(token)).toBeNull();
   });
 });
 
-describe("sign-in throttle", () => {
-  it("blocks after repeated failures and recovers after the window", () => {
-    const key = "1.2.3.4|someone@example.com";
+describe("attempt limits", () => {
+  it("blocks once the limit is reached and recovers after the window", () => {
+    const key = "login|1.2.3.4|someone@example.com";
     const start = 1_000_000;
-    clearLoginFailures(key);
-    for (let attempt = 0; attempt < 8; attempt += 1) {
-      expect(loginThrottle(key, start).allowed).toBe(true);
-      recordLoginFailure(key, start);
-    }
-    const blocked = loginThrottle(key, start + 1000);
+    clearAttempts(key);
+    for (let attempt = 0; attempt < 8; attempt += 1)
+      expect(takeAttempt(key, 8, start).allowed).toBe(true);
+    const blocked = takeAttempt(key, 8, start + 1000);
     expect(blocked.allowed).toBe(false);
     expect(blocked.retryAfterSeconds).toBeGreaterThan(0);
-    expect(loginThrottle(key, start + 16 * 60 * 1000).allowed).toBe(true);
-    clearLoginFailures(key);
-    expect(loginThrottle(key, start + 1000).allowed).toBe(true);
+    expect(takeAttempt(key, 8, start + 16 * 60 * 1000).allowed).toBe(true);
+    clearAttempts(key);
+    expect(takeAttempt(key, 8, start + 1000).allowed).toBe(true);
+    clearAttempts(key);
+  });
+
+  it("counts the attempt before the work, so parallel tries share the limit", () => {
+    const key = "login|5.6.7.8";
+    const start = 2_000_000;
+    clearAttempts(key);
+    const results = Array.from({ length: 5 }, () => takeAttempt(key, 3, start));
+    expect(results.map(result => result.allowed)).toEqual([
+      true,
+      true,
+      true,
+      false,
+      false,
+    ]);
+    releaseAttempt(key);
+    expect(takeAttempt(key, 3, start).allowed).toBe(true);
+    clearAttempts(key);
   });
 });

@@ -6,6 +6,14 @@ export function parseISODate(value: string): Date {
   return new Date(year, (month || 1) - 1, day || 1);
 }
 
+/** Replace Arabic-Indic and Persian digits with ASCII ones, for fields that parse numbers. */
+export function toAsciiDigits(value: string): string {
+  return value.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, digit => {
+    const code = digit.charCodeAt(0);
+    return String(code >= 0x6f0 ? code - 0x6f0 : code - 0x660);
+  });
+}
+
 /** Format a local date as yyyy-mm-dd. */
 export function toISODate(date: Date): string {
   const month = String(date.getMonth() + 1).padStart(2, "0");

@@ -1,4 +1,4 @@
-import { toISODate } from "./format";
+import { parseISODate, toISODate } from "./format";
 
 export type PeriodKey =
   | "month"
@@ -81,8 +81,8 @@ export function previousRange(
       to: toISODate(new Date(now.getFullYear() - 1, 11, 31)),
     };
   }
-  const from = new Date(range.from);
-  const to = new Date(range.to);
+  const from = parseISODate(range.from);
+  const to = parseISODate(range.to);
   const days = Math.round((to.getTime() - from.getTime()) / 86_400_000) + 1;
   return {
     from: toISODate(shiftDays(from, -days)),

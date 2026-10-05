@@ -8,12 +8,13 @@ import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 import { normalizeMimeType } from "./_core/attachments";
 import {
-  clearLoginFailures,
+  clearAttempts,
   clearSession,
   hashPassword,
   issueSession,
-  loginThrottle,
-  recordLoginFailure,
+  LIMITS,
+  releaseAttempt,
+  takeAttempt,
   verifyPassword,
 } from "./_core/auth";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -25,7 +26,33 @@ const nameInput = z.string().trim().min(1).max(120);
 const languageInput = z.enum(["ar", "en"]);
 const idInput = z.object({ id: z.number().int().positive() });
 const transactionType = z.enum(["deposit", "expense"]);
-const dateInput = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const pinInput = z.string().regex(/^\d{4,8}$/);
+
+/** True when `yyyy-mm-dd` names a real calendar day (no 31 February). */
+const isCalendarDate = (value: string) => {
+  const [year, month, day] = value.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return (
+    date.getUTCFullYear() === year &&
+    date.getUTCMonth() === month - 1 &&
+    date.getUTCDate() === day
+  );
+};
+
+const dateInput = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/)
+  .refine(isCalendarDate, "Invalid date");
+
+/** The value of a datetime-local input: `yyyy-mm-ddThh:mm`. */
+const dateTimeInput = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/)
+  .refine(value => {
+    const [date, time] = value.split("T");
+    const [hours, minutes] = time.split(":").map(Number);
+    return isCalendarDate(date) && hours < 24 && minutes < 60;
+  }, "Invalid date");
 
 const attachmentInput = z.object({
   name: z.string().trim().min(1).max(255),
@@ -55,6 +82,12 @@ const publicUser = (user: db.UserRow) => ({
   email: user.email ?? "",
 });
 
+const tooManyAttempts = () =>
+  new TRPCError({
+    code: "TOO_MANY_REQUESTS",
+    message: ERR.TOO_MANY_ATTEMPTS,
+  });
+
 // Verified against when the email is unknown, so a failed sign-in takes the same time either way.
 const dummyHash = hashPassword("not-a-real-password");
 
@@ -74,6 +107,10 @@ export const appRouter = router({
         })
       )
       .mutation(async ({ ctx, input }) => {
+        const addressKey = `register|${ctx.req.ip ?? "unknown"}`;
+        if (!takeAttempt(addressKey, LIMITS.registerPerAddress).allowed)
+          throw tooManyAttempts();
+
         const passwordHash = await hashPassword(input.password);
         const user = await db.createUser({
           name: input.name,
@@ -81,36 +118,35 @@ export const appRouter = router({
           passwordHash,
           language: input.language,
         });
-        await issueSession(ctx.res, user.id);
+        await issueSession(ctx.res, user);
         return publicUser(user);
       }),
 
     login: publicProcedure
       .input(z.object({ email: emailInput, password: passwordInput }))
       .mutation(async ({ ctx, input }) => {
-        const throttleKey = `${ctx.req.ip ?? "unknown"}|${input.email}`;
-        const gate = loginThrottle(throttleKey);
-        if (!gate.allowed)
-          throw new TRPCError({
-            code: "TOO_MANY_REQUESTS",
-            message: ERR.TOO_MANY_ATTEMPTS,
-          });
+        const address = ctx.req.ip ?? "unknown";
+        const addressKey = `login|${address}`;
+        const accountKey = `login|${address}|${input.email}`;
+        if (!takeAttempt(addressKey, LIMITS.loginPerAddress).allowed)
+          throw tooManyAttempts();
+        if (!takeAttempt(accountKey, LIMITS.loginPerAccount).allowed)
+          throw tooManyAttempts();
 
         const user = await db.getUserByEmail(input.email);
         const valid = user
           ? await verifyPassword(input.password, user.passwordHash)
           : (await verifyPassword(input.password, await dummyHash), false);
-        if (!user || !valid) {
-          recordLoginFailure(throttleKey);
+        if (!user || !valid)
           throw new TRPCError({
             code: "UNAUTHORIZED",
             message: ERR.INVALID_CREDENTIALS,
           });
-        }
 
-        clearLoginFailures(throttleKey);
+        clearAttempts(accountKey);
+        releaseAttempt(addressKey);
         await db.touchLastSignedIn(user.id);
-        await issueSession(ctx.res, user.id);
+        await issueSession(ctx.res, user);
         return publicUser(user);
       }),
 
@@ -143,10 +179,12 @@ export const appRouter = router({
             code: "BAD_REQUEST",
             message: ERR.WRONG_PASSWORD,
           });
-        await db.updateUserPassword(
+        // Every other device is signed out; this one gets a fresh cookie.
+        const updated = await db.updateUserPassword(
           ctx.user.id,
           await hashPassword(input.newPassword)
         );
+        await issueSession(ctx.res, updated);
         return { success: true } as const;
       }),
   }),
@@ -189,6 +227,14 @@ export const appRouter = router({
           mimeType,
           size: data.byteLength,
         };
+      }),
+
+    /** Drop an upload that never made it onto a transaction (a cancelled dialog). */
+    discardAttachment: protectedProcedure
+      .input(idInput)
+      .mutation(async ({ ctx, input }) => {
+        await db.deleteUnlinkedAttachment(ctx.user.id, input.id);
+        return { success: true } as const;
       }),
 
     createTransaction: protectedProcedure
@@ -252,23 +298,22 @@ export const appRouter = router({
           depositStart: z.number().int().min(1).max(1_000_000_000).optional(),
           expenseStart: z.number().int().min(1).max(1_000_000_000).optional(),
           pinEnabled: z.boolean().optional(),
-          pin: z
-            .string()
-            .regex(/^\d{4,8}$/)
-            .optional(),
+          pin: pinInput.optional(),
         })
       )
       .mutation(({ ctx, input }) => db.updateSettings(ctx.user.id, input)),
 
     verifyPin: protectedProcedure
-      .input(z.object({ pin: z.string().regex(/^\d{4,8}$/) }))
+      .input(z.object({ pin: pinInput }))
       .mutation(async ({ ctx, input }) => {
+        const key = `pin|${ctx.user.id}`;
+        if (!takeAttempt(key, LIMITS.pinPerUser).allowed)
+          throw tooManyAttempts();
         const valid = await db.verifyPin(ctx.user.id, input.pin);
+        // FORBIDDEN, not UNAUTHORIZED: the session is fine, only the PIN is wrong.
         if (!valid)
-          throw new TRPCError({
-            code: "UNAUTHORIZED",
-            message: ERR.INVALID_PIN,
-          });
+          throw new TRPCError({ code: "FORBIDDEN", message: ERR.INVALID_PIN });
+        clearAttempts(key);
         return { valid: true } as const;
       }),
 
@@ -276,7 +321,7 @@ export const appRouter = router({
       .input(
         z.object({
           title: z.string().trim().min(1).max(200),
-          reminderDate: z.string().min(10).max(16),
+          reminderDate: dateTimeInput,
         })
       )
       .mutation(({ ctx, input }) => db.createReminder(ctx.user.id, input)),
@@ -284,7 +329,7 @@ export const appRouter = router({
       .input(
         idInput.extend({
           title: z.string().trim().min(1).max(200).optional(),
-          reminderDate: z.string().min(10).max(16).optional(),
+          reminderDate: dateTimeInput.optional(),
           enabled: z.boolean().optional(),
         })
       )

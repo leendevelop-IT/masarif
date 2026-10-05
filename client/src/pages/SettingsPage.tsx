@@ -20,7 +20,7 @@ import { useLocale } from "@/contexts/LocaleContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/hooks/useAuth";
 import { describeError } from "@/lib/errors";
-import { toLocalDateTime } from "@/lib/format";
+import { toAsciiDigits, toLocalDateTime } from "@/lib/format";
 import { prefs, type Language, type Numerals, type Theme } from "@/lib/prefs";
 import { trpc } from "@/lib/trpc";
 import type {
@@ -633,7 +633,9 @@ function TaxSection() {
 
   const submitRate = (event: FormEvent) => {
     event.preventDefault();
-    const parsed = clampTaxRate(Number(rate.replace(/[^\d.]/g, "")) || 0);
+    const parsed = clampTaxRate(
+      Number(toAsciiDigits(rate).replace(/[^\d.]/g, "")) || 0
+    );
     setRate(String(parsed));
     saveRate.mutate({ taxRate: parsed });
   };
@@ -1119,6 +1121,7 @@ function ColorPicker({
   onChange: (color: string) => void;
   label: string;
 }) {
+  const { t } = useLocale();
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1139,11 +1142,11 @@ function ColorPicker({
         className="w-auto border-border bg-surface p-2"
       >
         <div className="grid grid-cols-5 gap-1.5">
-          {CATEGORY_COLORS.map(color => (
+          {CATEGORY_COLORS.map((color, index) => (
             <button
               key={color}
               type="button"
-              aria-label={color}
+              aria-label={t.settings.categories.colorNames[index] ?? color}
               aria-pressed={color === value}
               onClick={() => {
                 onChange(color);
@@ -1607,7 +1610,8 @@ function SecuritySection() {
     save.mutate({ pinEnabled: true, pin });
   };
 
-  const digitsOnly = (value: string) => value.replace(/\D/g, "").slice(0, 8);
+  const digitsOnly = (value: string) =>
+    toAsciiDigits(value).replace(/\D/g, "").slice(0, 8);
 
   return (
     <SectionCard

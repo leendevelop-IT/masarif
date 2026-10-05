@@ -4,6 +4,16 @@ import type { Language } from "./prefs";
  * All interface copy, Arabic first. The English object is typed against the
  * Arabic one so a missing key fails the build instead of showing up blank.
  */
+/** "n transactions" with the Arabic dual and 3-10 plural. */
+const countTransactionsAr = (n: number) =>
+  n === 1
+    ? "عملية واحدة"
+    : n === 2
+      ? "عمليتين"
+      : n >= 3 && n <= 10
+        ? `${n} عمليات`
+        : `${n} عملية`;
+
 export const ar = {
   locale: "ar",
   dir: "rtl",
@@ -57,6 +67,7 @@ export const ar = {
       "أرشفة بدل الحذف، وسجل لكل تعديل",
       "تصدير Excel جاهز للمحاسب",
     ],
+    modeLabel: "تسجيل الدخول أو إنشاء حساب",
     signInTitle: "تسجيل الدخول",
     signInSubtitle: "مرحباً بعودتك. أدخل بياناتك للمتابعة.",
     registerTitle: "إنشاء حساب",
@@ -142,6 +153,7 @@ export const ar = {
     title: "العمليات",
     subtitle: "كل الإيداعات والمصروفات المسجلة.",
     tabs: { all: "الكل", deposits: "الإيداعات", expenses: "المصروفات" },
+    tabsLabel: "تصفية حسب النوع",
     count: (n: number) =>
       n === 0
         ? "لا توجد عمليات"
@@ -181,11 +193,18 @@ export const ar = {
     restored: (record: string) => `تمت استعادة ${record}`,
     archiveHint: "تختفي من السجل والمجاميع ويمكن استعادتها من الإعدادات.",
     exportExcel: "تصدير Excel",
-    exported: (n: number) => `تم تصدير ${n} عملية إلى Excel`,
+    exported: (n: number) => `تم تصدير ${countTransactionsAr(n)} إلى Excel`,
     nothingToExport: "لا توجد عمليات لتصديرها",
     openAttachment: "فتح المرفق",
     attachmentUnavailable: "المرفق غير متاح",
-    loadMore: (n: number) => `عرض ${n} عملية أخرى`,
+    loadMore: (n: number) =>
+      n === 1
+        ? "عرض عملية أخرى"
+        : n === 2
+          ? "عرض عمليتين أخريين"
+          : n >= 3 && n <= 10
+            ? `عرض ${n} عمليات أخرى`
+            : `عرض ${n} عملية أخرى`,
     deposit: "إيداع",
     expense: "مصروف",
   },
@@ -207,6 +226,7 @@ export const ar = {
     customer: "اسم العميل",
     invoiceNumber: "رقم الفاتورة",
     taxNumber: "الرقم الضريبي",
+    type: "نوع العملية",
     numbering: "الترقيم",
     auto: "آلي",
     manual: "يدوي",
@@ -224,6 +244,7 @@ export const ar = {
     takePhoto: "التقاط صورة",
     currentAttachment: "المرفق الحالي",
     removeAttachment: "إزالة المرفق",
+    fileSize: (kb: string) => `${kb} كيلوبايت`,
     fileTooLarge: "حجم الملف يتجاوز 10 ميغابايت",
     save: "حفظ العملية",
     saveChanges: "مراجعة التعديل",
@@ -249,6 +270,9 @@ export const ar = {
     cashFlowHint: "الإيداعات مقابل المصروفات، شهراً بشهر",
     chartView: "رسم",
     tableView: "جدول",
+    viewToggle: "طريقة العرض",
+    chartAlt:
+      "رسم أعمدة للإيداعات والمصروفات في كل شهر؛ عرض الجدول يحتوي الأرقام نفسها.",
     month: "الشهر",
     depositCategories: "الإيداعات حسب الفئة",
     expenseCategories: "المصروفات حسب الفئة",
@@ -337,6 +361,18 @@ export const ar = {
       add: "إضافة",
       rename: "تعديل الاسم",
       color: "اللون",
+      colorNames: [
+        "زمردي",
+        "أزرق",
+        "بنفسجي",
+        "وردي",
+        "مرجاني",
+        "برتقالي",
+        "ذهبي",
+        "أخضر",
+        "سماوي",
+        "رمادي",
+      ],
       inUse: (n: number) =>
         n === 1
           ? "مستخدمة في عملية واحدة"
@@ -439,6 +475,9 @@ export const ar = {
     ATTACHMENT_TOO_LARGE: "حجم المرفق يتجاوز 10 ميغابايت.",
     ATTACHMENT_EMPTY: "الملف فارغ.",
     ATTACHMENT_NOT_FOUND: "المرفق غير موجود.",
+    ATTACHMENT_QUOTA_EXCEEDED:
+      "امتلأت مساحة المرفقات (100 ميغابايت لكل حساب). أزل مرفقات قديمة ثم حاول مجدداً.",
+    INTERNAL_ERROR: "حدث خطأ غير متوقع في الخادم. حاول مرة أخرى.",
     NETWORK: "تعذر الاتصال بالخادم. تحقق من الإنترنت وحاول مجدداً.",
     GENERIC: "تعذر إكمال الطلب. حاول مرة أخرى.",
   },
@@ -505,6 +544,7 @@ export const en: Dictionary = {
       "Archive instead of delete, with a change log",
       "Excel export ready for your accountant",
     ],
+    modeLabel: "Sign in or create an account",
     signInTitle: "Sign in",
     signInSubtitle: "Welcome back. Enter your details to continue.",
     registerTitle: "Create account",
@@ -585,6 +625,7 @@ export const en: Dictionary = {
     title: "Transactions",
     subtitle: "Every deposit and expense you've recorded.",
     tabs: { all: "All", deposits: "Deposits", expenses: "Expenses" },
+    tabsLabel: "Filter by type",
     count: (n: number) =>
       n === 0
         ? "No transactions"
@@ -607,7 +648,7 @@ export const en: Dictionary = {
       net: "Before tax",
       tax: "Tax",
       total: "Total",
-      attachment: "File",
+      attachment: "Attachment",
       actions: "Actions",
     },
     invoiceShort: (n: string) => `Invoice ${n}`,
@@ -621,11 +662,14 @@ export const en: Dictionary = {
     archiveHint:
       "Removed from the ledger and totals; restore it any time from Settings.",
     exportExcel: "Export Excel",
-    exported: (n: number) => `Exported ${n} transactions to Excel`,
+    exported: (n: number) =>
+      n === 1
+        ? "Exported 1 transaction to Excel"
+        : `Exported ${n} transactions to Excel`,
     nothingToExport: "There are no transactions to export",
     openAttachment: "Open attachment",
     attachmentUnavailable: "Attachment unavailable",
-    loadMore: (n: number) => `Show ${n} more`,
+    loadMore: (n: number) => (n === 1 ? "Show 1 more" : `Show ${n} more`),
     deposit: "Deposit",
     expense: "Expense",
   },
@@ -647,6 +691,7 @@ export const en: Dictionary = {
     customer: "Customer name",
     invoiceNumber: "Invoice number",
     taxNumber: "Tax number",
+    type: "Transaction type",
     numbering: "Numbering",
     auto: "Automatic",
     manual: "Manual",
@@ -664,6 +709,7 @@ export const en: Dictionary = {
     takePhoto: "Take photo",
     currentAttachment: "Current attachment",
     removeAttachment: "Remove attachment",
+    fileSize: (kb: string) => `${kb} KB`,
     fileTooLarge: "File is larger than 10 MB",
     save: "Save transaction",
     saveChanges: "Review changes",
@@ -691,6 +737,9 @@ export const en: Dictionary = {
     cashFlowHint: "Deposits versus expenses, month by month",
     chartView: "Chart",
     tableView: "Table",
+    viewToggle: "View",
+    chartAlt:
+      "Bar chart of deposits and expenses for each month; the table view lists the same numbers.",
     month: "Month",
     depositCategories: "Deposits by category",
     expenseCategories: "Expenses by category",
@@ -781,6 +830,18 @@ export const en: Dictionary = {
       add: "Add",
       rename: "Rename",
       color: "Color",
+      colorNames: [
+        "Emerald",
+        "Blue",
+        "Violet",
+        "Pink",
+        "Coral",
+        "Orange",
+        "Gold",
+        "Green",
+        "Cyan",
+        "Grey",
+      ],
       inUse: (n: number) =>
         n === 1 ? "Used by 1 transaction" : `Used by ${n} transactions`,
       unused: "Not used yet",
@@ -879,6 +940,9 @@ export const en: Dictionary = {
     ATTACHMENT_TOO_LARGE: "The attachment is larger than 10 MB.",
     ATTACHMENT_EMPTY: "The file is empty.",
     ATTACHMENT_NOT_FOUND: "Attachment not found.",
+    ATTACHMENT_QUOTA_EXCEEDED:
+      "Attachment storage is full (100 MB per account). Remove older attachments and try again.",
+    INTERNAL_ERROR: "Something went wrong on the server. Try again.",
     NETWORK: "Couldn't reach the server. Check your connection and try again.",
     GENERIC: "The request couldn't be completed. Try again.",
   },

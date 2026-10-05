@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useLocale } from "@/contexts/LocaleContext";
 import { useAuth } from "@/hooks/useAuth";
 import { describeError } from "@/lib/errors";
+import { toAsciiDigits } from "@/lib/format";
 import { trpc } from "@/lib/trpc";
 import { Loader2, LockKeyhole } from "lucide-react";
 import { useState, type FormEvent } from "react";
@@ -50,7 +51,9 @@ export default function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
           autoFocus
           value={pin}
           onChange={event =>
-            setPin(event.target.value.replace(/\D/g, "").slice(0, 8))
+            setPin(
+              toAsciiDigits(event.target.value).replace(/\D/g, "").slice(0, 8)
+            )
           }
           placeholder={t.pin.placeholder}
           aria-label={t.settings.security.newPin}
@@ -74,7 +77,11 @@ export default function PinGate({ onUnlocked }: { onUnlocked: () => void }) {
         <button
           type="button"
           onClick={() => {
-            logout().then(() => toast.success(t.auth.signedOut));
+            logout()
+              .then(() => toast.success(t.auth.signedOut))
+              .catch(() => {
+                // The local session is cleared regardless.
+              });
           }}
           className="mt-5 text-sm text-ink-3 hover:text-ink"
         >

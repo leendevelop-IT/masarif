@@ -1,4 +1,8 @@
-import { ATTACHMENT_URL_PREFIX, ERR } from "@shared/const";
+import {
+  ATTACHMENT_URL_PREFIX,
+  ERR,
+  MAX_ATTACHMENT_TOTAL_BYTES,
+} from "@shared/const";
 import {
   clampTaxRate,
   computeAmounts,
@@ -6,9 +10,9 @@ import {
   type TransactionType,
 } from "@shared/money";
 import { TRPCError } from "@trpc/server";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, lt, notExists, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import {
   attachments,
@@ -20,6 +24,7 @@ import {
   userSettings,
   type User,
 } from "../drizzle/schema";
+import { hashPin, verifyPin as verifyPinHash } from "./_core/auth";
 import { ENV } from "./_core/env";
 
 type Language = "ar" | "en";
@@ -136,17 +141,15 @@ export async function createUser(input: {
     await db
       .insert(userSettings)
       .values({ userId: user.id, language: input.language });
-    await db
-      .insert(categories)
-      .values(
-        (["deposit", "expense"] as TransactionType[]).flatMap(type =>
-          defaultCategories[input.language][type].map(category => ({
-            userId: user.id,
-            type,
-            ...category,
-          }))
-        )
-      );
+    await db.insert(categories).values(
+      (["deposit", "expense"] as TransactionType[]).flatMap(type =>
+        defaultCategories[input.language][type].map(category => ({
+          userId: user.id,
+          type,
+          ...category,
+        }))
+      )
+    );
     return user;
   } catch (error) {
     if (isUniqueViolation(error))
@@ -160,9 +163,15 @@ export async function updateUserName(userId: number, name: string) {
   await db.update(users).set({ name: name.trim() }).where(eq(users.id, userId));
 }
 
+/** Store a new password hash and invalidate every session issued before it. */
 export async function updateUserPassword(userId: number, passwordHash: string) {
   const db = requireDb();
-  await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  const [updated] = await db
+    .update(users)
+    .set({ passwordHash, sessionVersion: sql`${users.sessionVersion} + 1` })
+    .where(eq(users.id, userId))
+    .returning();
+  return updated;
 }
 
 export async function touchLastSignedIn(userId: number) {
@@ -176,23 +185,6 @@ export async function touchLastSignedIn(userId: number) {
 // ---------------------------------------------------------------------------
 // Settings and categories
 // ---------------------------------------------------------------------------
-
-const hashPin = (pin: string) => {
-  const salt = randomBytes(16).toString("hex");
-  const hash = scryptSync(pin, salt, 32).toString("hex");
-  return `${salt}:${hash}`;
-};
-
-const matchesPin = (pin: string, stored?: string | null) => {
-  if (!stored) return false;
-  const [salt, expected] = stored.split(":");
-  if (!salt || !expected) return false;
-  const actual = scryptSync(pin, salt, 32).toString("hex");
-  return (
-    actual.length === expected.length &&
-    timingSafeEqual(Buffer.from(actual), Buffer.from(expected))
-  );
-};
 
 async function ensureSettings(userId: number) {
   const db = requireDb();
@@ -328,7 +320,7 @@ export async function updateSettings(
     update.expenseStart = Math.max(1, Math.floor(input.expenseStart));
   if (typeof input.pinEnabled === "boolean")
     update.pinEnabled = input.pinEnabled;
-  if (input.pin) update.pinHash = hashPin(input.pin);
+  if (input.pin) update.pinHash = await hashPin(input.pin);
   if (input.pinEnabled === false) update.pinHash = null;
   if (Object.keys(update).length)
     await db
@@ -340,7 +332,7 @@ export async function updateSettings(
 export async function verifyPin(userId: number, pin: string) {
   const settings = await ensureSettings(userId);
   if (!settings.pinEnabled || !settings.pinHash) return true;
-  return matchesPin(pin, settings.pinHash);
+  return verifyPinHash(pin, settings.pinHash);
 }
 
 // ---------------------------------------------------------------------------
@@ -531,7 +523,11 @@ async function requireOwnedAttachment(
       message: ERR.ATTACHMENT_NOT_FOUND,
     });
   const rows = await db
-    .select({ id: attachments.id })
+    .select({
+      id: attachments.id,
+      fileName: attachments.fileName,
+      mimeType: attachments.mimeType,
+    })
     .from(attachments)
     .where(and(eq(attachments.id, id), eq(attachments.userId, userId)))
     .limit(1);
@@ -540,6 +536,8 @@ async function requireOwnedAttachment(
       code: "BAD_REQUEST",
       message: ERR.ATTACHMENT_NOT_FOUND,
     });
+  // The stored name and type are what the file really is; the link only names it.
+  return { name: rows[0].fileName, mimeType: rows[0].mimeType, url: link.url };
 }
 
 async function nextRecordNumber(db: Db, userId: number, type: TransactionType) {
@@ -575,8 +573,9 @@ export async function createTransaction(
 ) {
   const db = requireDb();
   await requireCategory(db, userId, input.categoryId, input.type);
-  if (input.attachment)
-    await requireOwnedAttachment(db, userId, input.attachment);
+  const attachment = input.attachment
+    ? await requireOwnedAttachment(db, userId, input.attachment)
+    : null;
 
   const amounts = computeAmounts(input);
   const supplied = input.recordNumber?.trim();
@@ -600,9 +599,9 @@ export async function createTransaction(
         taxNumber:
           input.type === "expense" ? input.taxNumber?.trim() || null : null,
         ...amounts,
-        attachmentName: input.attachment?.name ?? null,
-        attachmentMime: input.attachment?.mimeType ?? null,
-        attachmentUrl: input.attachment?.url ?? null,
+        attachmentName: attachment?.name ?? null,
+        attachmentMime: attachment?.mimeType ?? null,
+        attachmentUrl: attachment?.url ?? null,
       })
       .returning({ id: transactions.id });
     await db.insert(transactionAuditLogs).values({
@@ -645,8 +644,9 @@ export async function updateTransaction(
       code: "NOT_FOUND",
       message: ERR.TRANSACTION_NOT_FOUND,
     });
-  if (input.attachment)
-    await requireOwnedAttachment(db, userId, input.attachment);
+  const attachment = input.attachment
+    ? await requireOwnedAttachment(db, userId, input.attachment)
+    : input.attachment;
 
   const amounts = computeAmounts(input);
   const recordNumber = input.recordNumber?.trim() || current.recordNumber;
@@ -668,11 +668,11 @@ export async function updateTransaction(
         taxNumber:
           input.type === "expense" ? input.taxNumber?.trim() || null : null,
         ...amounts,
-        ...(input.attachment !== undefined
+        ...(attachment !== undefined
           ? {
-              attachmentName: input.attachment?.name ?? null,
-              attachmentMime: input.attachment?.mimeType ?? null,
-              attachmentUrl: input.attachment?.url ?? null,
+              attachmentName: attachment?.name ?? null,
+              attachmentMime: attachment?.mimeType ?? null,
+              attachmentUrl: attachment?.url ?? null,
             }
           : {}),
       })
@@ -749,11 +749,68 @@ export const restoreTransaction = (userId: number, transactionId: number) =>
 // Attachments
 // ---------------------------------------------------------------------------
 
+/** Uploads that never made it onto a transaction are kept this long for the dialog to finish. */
+const ORPHAN_GRACE_MS = 60 * 60 * 1000;
+
+/** The link a transaction stores for an attachment row: the URL prefix followed by its id. */
+const attachmentLink = sql`${ATTACHMENT_URL_PREFIX}::text || ${attachments.id}::text`;
+
+/** Rows of this user that no transaction (archived ones included) points at. */
+const unlinkedAttachments = (db: Db, userId: number) =>
+  and(
+    eq(attachments.userId, userId),
+    notExists(
+      db
+        .select({ one: sql`1` })
+        .from(transactions)
+        .where(
+          and(
+            eq(transactions.userId, userId),
+            eq(transactions.attachmentUrl, attachmentLink)
+          )
+        )
+    )
+  );
+
+/** Free uploads that were abandoned before their transaction was saved. */
+async function deleteOrphanAttachments(db: Db, userId: number, now: Date) {
+  await db
+    .delete(attachments)
+    .where(
+      and(
+        unlinkedAttachments(db, userId),
+        lt(attachments.createdAt, new Date(now.getTime() - ORPHAN_GRACE_MS))
+      )
+    );
+}
+
+export async function deleteUnlinkedAttachment(userId: number, id: number) {
+  const db = requireDb();
+  await db
+    .delete(attachments)
+    .where(and(eq(attachments.id, id), unlinkedAttachments(db, userId)));
+}
+
 export async function createAttachment(
   userId: number,
   input: { fileName: string; mimeType: string; data: Buffer }
 ) {
   const db = requireDb();
+  await deleteOrphanAttachments(db, userId, new Date());
+  const [usage] = await db
+    .select({
+      total: sql<number>`coalesce(sum(${attachments.size}), 0)::bigint`,
+    })
+    .from(attachments)
+    .where(eq(attachments.userId, userId));
+  if (
+    Number(usage?.total ?? 0) + input.data.byteLength >
+    MAX_ATTACHMENT_TOTAL_BYTES
+  )
+    throw new TRPCError({
+      code: "PAYLOAD_TOO_LARGE",
+      message: ERR.ATTACHMENT_QUOTA_EXCEEDED,
+    });
   const [row] = await db
     .insert(attachments)
     .values({
@@ -793,13 +850,11 @@ export async function createReminder(
   input: { title: string; reminderDate: string }
 ) {
   const db = requireDb();
-  await db
-    .insert(reminders)
-    .values({
-      userId,
-      title: input.title.trim(),
-      reminderDate: input.reminderDate,
-    });
+  await db.insert(reminders).values({
+    userId,
+    title: input.title.trim(),
+    reminderDate: input.reminderDate,
+  });
 }
 
 export async function updateReminder(

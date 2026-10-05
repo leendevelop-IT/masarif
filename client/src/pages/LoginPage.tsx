@@ -138,11 +138,13 @@ export default function LoginPage() {
             </div>
 
             <div className="card p-6 sm:p-8">
-              <div className="segmented grid w-full grid-cols-2" role="tablist">
+              <div
+                className="segmented grid w-full grid-cols-2"
+                role="group"
+                aria-label={t.auth.modeLabel}
+              >
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={!isRegister}
                   aria-pressed={!isRegister}
                   onClick={() => switchMode("login")}
                 >
@@ -150,8 +152,6 @@ export default function LoginPage() {
                 </button>
                 <button
                   type="button"
-                  role="tab"
-                  aria-selected={isRegister}
                   aria-pressed={isRegister}
                   onClick={() => switchMode("register")}
                 >
