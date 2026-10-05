@@ -1,11 +1,11 @@
 import * as XLSX from "xlsx";
+import type { Dictionary } from "./i18n";
 
 export type ExportTransaction = {
   recordNumber: string;
   transactionDate: string;
   invoiceNumber: string;
   type: "deposit" | "expense";
-  categoryName: string;
   customerName: string;
   taxNumber: string;
   amountBeforeTax: number;
@@ -13,26 +13,42 @@ export type ExportTransaction = {
   totalAmount: number;
 };
 
-export function exportTransactionsToExcel(records: ExportTransaction[]) {
+/** Writes the agreed nine-column workbook: number, date, invoice, customer, tax number, type, net, tax, total. */
+export function exportTransactionsToExcel(
+  records: ExportTransaction[],
+  t: Dictionary
+) {
+  const headers = t.export.headers;
   const rows = records.map(record => ({
-    "الرقم": record.recordNumber,
-    "التاريخ": record.transactionDate,
-    "رقم الفاتورة": record.invoiceNumber || "",
-    "اسم العميل": record.customerName === "—" ? "" : record.customerName,
-    "الرقم الضريبي": record.taxNumber || "",
-    "نوع الاضافة (الدخل/الصرف)": record.type === "deposit" ? "الدخل" : "الصرف",
-    "المبلغ بدون الضريبة": record.amountBeforeTax,
-    "قيمة الضريبة": record.taxAmount,
-    "المبلغ شامل الضريبة": record.totalAmount,
+    [headers[0]]: record.recordNumber,
+    [headers[1]]: record.transactionDate,
+    [headers[2]]: record.invoiceNumber || "",
+    [headers[3]]: record.customerName || "",
+    [headers[4]]: record.taxNumber || "",
+    [headers[5]]:
+      record.type === "deposit" ? t.export.deposit : t.export.expense,
+    [headers[6]]: record.amountBeforeTax,
+    [headers[7]]: record.taxAmount,
+    [headers[8]]: record.totalAmount,
   }));
 
-  const worksheet = XLSX.utils.json_to_sheet(rows, {
-    header: ["الرقم", "التاريخ", "رقم الفاتورة", "اسم العميل", "الرقم الضريبي", "نوع الاضافة (الدخل/الصرف)", "المبلغ بدون الضريبة", "قيمة الضريبة", "المبلغ شامل الضريبة"],
-  });
+  const worksheet = XLSX.utils.json_to_sheet(rows, { header: [...headers] });
   worksheet["!cols"] = [
-    { wch: 14 }, { wch: 14 }, { wch: 18 }, { wch: 24 }, { wch: 18 }, { wch: 26 }, { wch: 22 }, { wch: 16 }, { wch: 22 },
+    { wch: 14 },
+    { wch: 14 },
+    { wch: 18 },
+    { wch: 24 },
+    { wch: 18 },
+    { wch: 26 },
+    { wch: 22 },
+    { wch: 16 },
+    { wch: 22 },
   ];
+  if (t.dir === "rtl") worksheet["!views"] = [{ RTL: true }];
   const workbook = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(workbook, worksheet, "المصروفات");
-  XLSX.writeFileXLSX(workbook, `سجل-المصروفات-${new Date().toISOString().slice(0, 10)}.xlsx`);
+  XLSX.utils.book_append_sheet(workbook, worksheet, t.export.sheet);
+  XLSX.writeFileXLSX(
+    workbook,
+    `${t.export.fileName}-${new Date().toISOString().slice(0, 10)}.xlsx`
+  );
 }

@@ -1,6 +1,7 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
 import type { User } from "../../drizzle/schema";
-import { sdk } from "./sdk";
+import * as db from "../db";
+import { readSessionUserId } from "./auth";
 
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
@@ -12,17 +13,15 @@ export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   let user: User | null = null;
-
   try {
-    user = await sdk.authenticateRequest(opts.req);
+    const userId = await readSessionUserId(opts.req);
+    if (userId) user = (await db.getUserById(userId)) ?? null;
   } catch (error) {
-    // Authentication is optional for public procedures.
-    user = null;
+    // Authentication is optional for public procedures; protected ones reject below.
+    console.warn(
+      "[Auth] Failed to resolve session:",
+      error instanceof Error ? error.message : error
+    );
   }
-
-  return {
-    req: opts.req,
-    res: opts.res,
-    user,
-  };
+  return { req: opts.req, res: opts.res, user };
 }

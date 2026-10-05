@@ -1,12 +1,28 @@
-// Platform values are read at use time. See the Webdev service/authentication skills.
+// Runtime configuration. Values are read at use time so tests can stub them.
+const DEV_SESSION_SECRET = "masarif-dev-only-secret-change-me";
+
 export const ENV = {
-  get appId() { return process.env.MANUS_PROJECT_ID ?? ""; },
-  get cookieSecret() { return process.env.MANUS_JWT_SECRET ?? ""; },
-  get databaseUrl() { return process.env.DATABASE_URL ?? ""; },
-  get oAuthServerUrl() { return process.env.MANUS_OAUTH_API_URL ?? ""; },
-  // Preserve the legacy hint when supplied; otherwise roles remain application data.
-  get ownerOpenId() { return process.env.OWNER_OPEN_ID ?? ""; },
-  get isProduction() { return process.env.NODE_ENV === "production"; },
-  get forgeApiUrl() { return process.env.MANUS_API_URL ?? ""; },
-  get forgeApiKey() { return process.env.MANUS_API_KEY ?? ""; },
+  get databaseUrl() {
+    return process.env.DATABASE_URL ?? "";
+  },
+  get isProduction() {
+    return process.env.NODE_ENV === "production";
+  },
+  get port() {
+    return Number(process.env.PORT || "3000");
+  },
+  /** Secret used to sign session tokens. Required in production. */
+  get sessionSecret() {
+    const secret = process.env.SESSION_SECRET;
+    if (secret && secret.length >= 16) return secret;
+    if (this.isProduction)
+      throw new Error(
+        "SESSION_SECRET must be set to at least 16 characters in production"
+      );
+    return DEV_SESSION_SECRET;
+  },
+  /** Run pending database migrations on startup (default on; set RUN_MIGRATIONS=false to skip). */
+  get runMigrations() {
+    return process.env.RUN_MIGRATIONS !== "false";
+  },
 };

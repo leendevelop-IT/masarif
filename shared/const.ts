@@ -1,37 +1,33 @@
-export const COOKIE_NAME = "webdev_app_session";
-export const ONE_YEAR_MS = 1000 * 60 * 60 * 24 * 365;
-export const AXIOS_TIMEOUT_MS = 30_000;
-export const UNAUTHED_ERR_MSG = 'Please login (10001)';
-export const NOT_ADMIN_ERR_MSG = 'You do not have required permission (10002)';
+/** Name of the httpOnly session cookie set after sign-in. */
+export const COOKIE_NAME = "masarif_session";
+/** Sessions last 30 days; signing in again issues a fresh one. */
+export const SESSION_TTL_MS = 1000 * 60 * 60 * 24 * 30;
+/** Attachments are served from this path followed by their id. */
+export const ATTACHMENT_URL_PREFIX = "/api/attachments/";
+export const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+export const MIN_PASSWORD_LENGTH = 8;
 
-// One-time nonce cookie that binds an OAuth login to the browser that started
-// it. The `__Host-` prefix forces the cookie host-only (Secure, Path=/, no
-// Domain), so a sibling *.manus.space site cannot plant a matching value in a
-// victim's browser.
-export const OAUTH_STATE_COOKIE = "__Host-oauth_state";
+/**
+ * Error codes thrown by the server. The client maps them to translated
+ * messages, so the API itself stays language-neutral.
+ */
+export const ERR = {
+  UNAUTHORIZED: "UNAUTHORIZED",
+  FORBIDDEN: "FORBIDDEN",
+  DB_UNAVAILABLE: "DB_UNAVAILABLE",
+  INVALID_CREDENTIALS: "INVALID_CREDENTIALS",
+  EMAIL_TAKEN: "EMAIL_TAKEN",
+  TOO_MANY_ATTEMPTS: "TOO_MANY_ATTEMPTS",
+  WRONG_PASSWORD: "WRONG_PASSWORD",
+  INVALID_CATEGORY: "INVALID_CATEGORY",
+  CATEGORY_EXISTS: "CATEGORY_EXISTS",
+  CATEGORY_IN_USE: "CATEGORY_IN_USE",
+  RECORD_NUMBER_TAKEN: "RECORD_NUMBER_TAKEN",
+  TRANSACTION_NOT_FOUND: "TRANSACTION_NOT_FOUND",
+  INVALID_PIN: "INVALID_PIN",
+  ATTACHMENT_TOO_LARGE: "ATTACHMENT_TOO_LARGE",
+  ATTACHMENT_EMPTY: "ATTACHMENT_EMPTY",
+  ATTACHMENT_NOT_FOUND: "ATTACHMENT_NOT_FOUND",
+} as const;
 
-// `state` carries the callback redirect URI (used at token exchange) plus the
-// CSRF nonce. Defined here so the client encoder and server decoder never drift.
-export type OAuthState = { redirectUri: string; nonce?: string };
-
-export const encodeOAuthState = (state: OAuthState): string =>
-  btoa(JSON.stringify(state));
-
-export const decodeOAuthState = (state: string): OAuthState => {
-  let decoded: string;
-  try {
-    decoded = atob(state);
-  } catch {
-    // Malformed base64 (e.g. attacker-supplied garbage). Return no nonce so the
-    // callback's CSRF guard rejects it with 403 — never throw, since the caller
-    // runs outside the request handler's try/catch.
-    return { redirectUri: "" };
-  }
-  try {
-    const parsed = JSON.parse(decoded);
-    if (parsed && typeof parsed.redirectUri === "string") return parsed;
-  } catch {
-    // Legacy links: `state` was a bare base64(redirectUri) with no nonce.
-  }
-  return { redirectUri: decoded };
-};
+export type ErrorCode = (typeof ERR)[keyof typeof ERR];
