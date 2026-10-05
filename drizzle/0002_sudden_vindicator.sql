@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD CONSTRAINT `transaction_user_number_unique` UNIQUE(`userId`,`recordNumber`);

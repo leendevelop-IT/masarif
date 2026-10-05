@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `attachmentUrl` varchar(512);

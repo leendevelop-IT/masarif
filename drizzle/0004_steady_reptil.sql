@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `invoiceNumber` varchar(80);

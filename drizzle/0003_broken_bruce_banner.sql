@@ -1,0 +1,1 @@
+ALTER TABLE `transactions` ADD `taxNumber` varchar(80);
